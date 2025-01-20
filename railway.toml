@@ -1,4 +1,0 @@
-[service]
-name = "my-service"  
-path = "."           
-dockerfile = "./Dockerfile"
