@@ -13,7 +13,6 @@ function App() {
   const [boxHeight, setBoxHeight] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // وضعیت پارامترهای افکت‌ها (بدون Cartoon Factor)
   const [effects, setEffects] = useState({
     blackWhiteLevel: 0.2,
     posterizeBits: 4,
@@ -54,6 +53,7 @@ function App() {
 
       const img = new Image();
       img.onload = () => {
+        // در اینجا اگر بخواهید مقیاس را محدود کنید، می‌توانید اعمال کنید.
         setBoxWidth(img.width);
         setBoxHeight(img.height);
       };
@@ -62,7 +62,6 @@ function App() {
     reader.readAsDataURL(file);
   };
 
-  // مدیریت تغییرات در ورودی افکت‌ها
   const handleEffectChange = (e) => {
     const { name, value, type, checked } = e.target;
     setEffects((prev) => ({
@@ -70,6 +69,64 @@ function App() {
       [name]: type === "checkbox" ? checked : parseFloat(value),
     }));
   };
+
+  // این تابع دو آدرس عکس و ابعاد نهایی را می‌گیرد و یک dataURL (Base64) نهایی برمی‌گرداند.
+async function mergeImages(bgUrl, subjectUrl, width, height) {
+  // 1) ساختن یک المان canvas در حافظه
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  // 2) لود کردن عکس پس‌زمینه (به‌صورت Image)
+  const bgImg = new Image();
+  bgImg.crossOrigin = "anonymous"; // تا در صورت نیاز دچار مشکل CORS نشویم
+  bgImg.src = bgUrl;
+  await new Promise((resolve) => {
+    bgImg.onload = resolve;
+  });
+
+  // 3) لود کردن عکس سوژه
+  const subjectImg = new Image();
+  subjectImg.crossOrigin = "anonymous";
+  subjectImg.src = subjectUrl;
+  await new Promise((resolve) => {
+    subjectImg.onload = resolve;
+  });
+
+  // 4) رسم عکس پس‌زمینه در ابعاد canvas
+  // روش ساده (Stretch): بک‌گراند را دقیقاً به اندازه‌ی subject بکشیم.
+  // ctx.drawImage(bgImg, 0, 0, width, height);
+
+  // یا اگر بخواهیم "cover" کنیم تا نسبت تصویر پس‌زمینه حفظ شود،
+  // محاسبه می‌کنیم کدام بعد باید بیشتر اسکیل شود:
+  const subjectRatio = width / height;
+  const bgRatio = bgImg.width / bgImg.height;
+
+  let drawWidth, drawHeight, offsetX, offsetY;
+  if (bgRatio > subjectRatio) {
+    // پس‌زمینه در عرض عریض‌تر است، ارتفاع را فیکس کرده و عرض را حساب می‌کنیم
+    drawHeight = height;
+    drawWidth = bgImg.width * (height / bgImg.height);
+    offsetX = (width - drawWidth) / 2;
+    offsetY = 0;
+  } else {
+    // پس‌زمینه نسبتا باریک‌تر یا مربعی‌تر است، عرض را فیکس کرده و ارتفاع را حساب می‌کنیم
+    drawWidth = width;
+    drawHeight = bgImg.height * (width / bgImg.width);
+    offsetX = 0;
+    offsetY = (height - drawHeight) / 2;
+  }
+  ctx.drawImage(bgImg, offsetX, offsetY, drawWidth, drawHeight);
+
+  // 5) رسم عکس سوژه روی بک‌گراند
+  // فرض می‌کنیم در همان ابعاد اصلی سوژه (width, height) می‌خواهیم قرار دهیم:
+  ctx.drawImage(subjectImg, 0, 0, width, height);
+
+  // 6) گرفتن خروجی به فرم Base64
+  return canvas.toDataURL("image/png");
+}
+
 
   const handleRemoveBG = async () => {
     if (!selectedFile) {
@@ -86,7 +143,6 @@ function App() {
         formData.append(key, effects[key]);
       });
 
-      // اگر در Docker نهایی پورت 4000 باشد، همین لینک جواب می‌دهد:
       const response = await fetch("http://localhost:4000/api/remove-bg", {
         method: "POST",
         body: formData,
@@ -111,414 +167,339 @@ function App() {
     }
   };
 
+  // دکمهٔ دانلود تصویر خروجی
+ // ...
+const handleDownload = async () => {
+  if (!subjectSrc || !bgUrl || !boxWidth || !boxHeight) {
+    return;
+  }
+  try {
+    // فراخوانی تابع mergeImages
+    const mergedDataURL = await mergeImages(bgUrl, subjectSrc, boxWidth, boxHeight);
+
+    // ساخت یک لینک موقت برای دانلود
+    const link = document.createElement("a");
+    link.href = mergedDataURL;
+    link.download = "final_image.png";
+    link.click();
+  } catch (error) {
+    console.error("Error merging images:", error);
+  }
+};
+
+
   return (
-    <div style={{ textAlign: "center", margin: "0 auto", padding: "1rem" }}>
-      <h1>Dynamic Box + Random BG (Show after server data)</h1>
+    <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden", color: "black" }}>
+      {/* پس‌زمینه‌ی بلور شده */}
+      <div
+        style={{
+          position: "fixed",
+          zIndex: -1,
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          backgroundImage: "url('/backgroundsite.webp')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          filter: "blur(10px)",
+        }}
+      ></div>
 
-      <input type="file" accept="image/*" onChange={handleFileChange} />
+      {/* محتوای اصلی */}
+      <div
+        style={{
+          // یک کانتینر برای وسط‌چین بودن و ریسپانسیو شدن
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "flex-center",
+          margin: "0 auto",
+          padding: "2rem",
+          maxWidth: "1200px",
+        }}
+      >
+        <h1 style={{ textAlign: "center", color: "#fff" }}>
+        Silhouette your Images {":)"}
+        </h1>
 
-      {/* فرم تنظیم افکت‌ها */}
-      <div style={{ margin: "1rem 0", textAlign: "left", display: "inline-block" }}>
-        <h3>تنظیمات افکت‌ها:</h3>
-        {/* افکت سیاه و سفید */}
-        <div>
-          <label>
-            Black & White Level:
-            <input
-              type="number"
-              name="blackWhiteLevel"
-              value={effects.blackWhiteLevel}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="0"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            درجه‌ی سیاه و سفید تصویر (0 تا 1)
-          </span>
-        </div>
-        {/* افکت پسترایز */}
-        <div>
-          <label>
-            Posterize Bits:
-            <input
-              type="number"
-              name="posterizeBits"
-              value={effects.posterizeBits}
-              onChange={handleEffectChange}
-              step="1"
-              min="1"
-              max="8"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تعداد بیت‌های پسترایز (1 تا 8)
-          </span>
-        </div>
-        {/* افکت کنتراست */}
-        <div>
-          <label>
-            Contrast Factor:
-            <input
-              type="number"
-              name="contrastFactor"
-              value={effects.contrastFactor}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="0.1"
-              max="3"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            فاکتور تنظیم کنتراست تصویر (0.1 تا 3)
-          </span>
-        </div>
-        {/* افکت Overlay Alpha */}
-        <div>
-          <label>
-            Overlay Alpha:
-            <input
-              type="number"
-              name="overlayAlpha"
-              value={effects.overlayAlpha}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="0"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            شفافیت افکت overlay (0 تا 1)
-          </span>
-        </div>
-        {/* افکت Black Level */}
-        <div>
-          <label>
-            Black Level:
-            <input
-              type="number"
-              name="blackLevel"
-              value={effects.blackLevel}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="0"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            سطح سیاهی تصویر (0 تا 1)
-          </span>
-        </div>
-        {/* افکت White Level */}
-        <div>
-          <label>
-            White Level:
-            <input
-              type="number"
-              name="whiteLevel"
-              value={effects.whiteLevel}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="0"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            سطح سفیدی تصویر (0 تا 1)
-          </span>
-        </div>
-        {/* افکت Face Enhance */}
-        <div>
-          <label>
-            Face Enhance:
-            <input
-              type="checkbox"
-              name="faceEnhance"
-              checked={effects.faceEnhance}
-              onChange={handleEffectChange}
-              style={{ marginLeft: "10px" }}
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            فعال/غیرفعال کردن افکت Face Enhance
-          </span>
-        </div>
-        {/* افکت Brightness */}
-        <div>
-          <label>
-            Brightness:
-            <input
-              type="number"
-              name="brightness"
-              value={effects.brightness}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="-1"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تنظیم روشنایی تصویر (-1 تا 1)
-          </span>
-        </div>
-        {/* افکت Saturation */}
-        <div>
-          <label>
-            Saturation:
-            <input
-              type="number"
-              name="saturation"
-              value={effects.saturation}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="-1"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تنظیم اشباع رنگ تصویر (-1 تا 1)
-          </span>
-        </div>
-        {/* افکت Sharpness */}
-        <div>
-          <label>
-            Sharpness:
-            <input
-              type="number"
-              name="sharpness"
-              value={effects.sharpness}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="-1"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تنظیم وضوح تصویر (-1 تا 1)
-          </span>
-        </div>
-        {/* افکت Hue */}
-        <div>
-          <label>
-            Hue:
-            <input
-              type="number"
-              name="hue"
-              value={effects.hue}
-              onChange={handleEffectChange}
-              step="1"
-              min="-180"
-              max="180"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تنظیم Hue تصویر (-180 تا 180)
-          </span>
-        </div>
-        {/* افکت Blur */}
-        <div>
-          <label>
-            Blur:
-            <input
-              type="number"
-              name="blur"
-              value={effects.blur}
-              onChange={handleEffectChange}
-              step="1"
-              min="0"
-              max="100"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تنظیم میزان Blur تصویر (0 تا 100)
-          </span>
-        </div>
-        {/* افکت Vignette */}
-        <div>
-          <label>
-            Vignette:
-            <input
-              type="number"
-              name="vignette"
-              value={effects.vignette}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="0"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تنظیم میزان Vignette تصویر (0 تا 1)
-          </span>
-        </div>
-        {/* افکت Skin Smooth */}
-        <div>
-          <label>
-            Skin Smooth:
-            <input
-              type="number"
-              name="skinSmooth"
-              value={effects.skinSmooth}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="0"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تنظیم میزان Skin Smooth تصویر (0 تا 1)
-          </span>
-        </div>
-        {/* افکت روشن‌سازی چشم‌ها */}
-        <div>
-          <label>
-            Eye Brightening:
-            <input
-              type="number"
-              name="eyeBrighten"
-              value={effects.eyeBrighten}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="0"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تنظیم میزان روشن‌سازی چشم‌ها (0 تا 1)
-          </span>
-        </div>
-        {/* افکت سفید کردن دندان‌ها */}
-        <div>
-          <label>
-            Teeth Whitening:
-            <input
-              type="number"
-              name="teethWhiten"
-              value={effects.teethWhiten}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="0"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تنظیم میزان سفید کردن دندان‌ها (0 تا 1)
-          </span>
-        </div>
-        {/* افکت لپ‌استیک */}
-        <div>
-          <label>
-            Lipstick:
-            <input
-              type="number"
-              name="lipstick"
-              value={effects.lipstick}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="0"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تنظیم میزان اعمال لپ‌استیک (0 تا 1)
-          </span>
-        </div>
-        {/* افکت افزایش حجم مژه‌ها */}
-        <div>
-          <label>
-            Eyelash Enhancement:
-            <input
-              type="number"
-              name="eyelashEnhance"
-              value={effects.eyelashEnhance}
-              onChange={handleEffectChange}
-              step="0.1"
-              min="0"
-              max="1"
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            تنظیم میزان افزایش حجم مژه‌ها (0 تا 1)
-          </span>
-        </div>
-        {/* افزودن عینک */}
-        <div>
-          <label>
-            Add Glasses:
-            <input
-              type="checkbox"
-              name="addGlasses"
-              checked={effects.addGlasses}
-              onChange={handleEffectChange}
-              style={{ marginLeft: "10px" }}
-            />
-          </label>
-          <span style={{ marginLeft: "10px" }}>
-            افزودن عینک به صورت
-          </span>
-        </div>
-      </div>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          style={{ margin: "1rem 0" }}
+        />
 
-      {/* پیش‌نمایش اولیه (ورودی) */}
-      {previewSrc && (
-        <div style={{ margin: "1rem 0" }}>
-          <p>پیش‌نمایش (ورودی):</p>
-          <img
-            src={previewSrc}
-            alt="Preview"
-            style={{ maxWidth: "300px", border: "1px solid #ccc" }}
-          />
-        </div>
-      )}
-
-      <button onClick={handleRemoveBG} disabled={loading}>
-        {loading ? "در حال پردازش..." : "حذف بک‌گراند"}
-      </button>
-
-      {subjectSrc && boxWidth && boxHeight && (
+        {/* بخش تنظیم افکت‌ها */}
         <div
           style={{
-            width: boxWidth + "px",
-            height: boxHeight + "px",
-            margin: "2rem auto",
-            position: "relative",
-            border: "1px solid #ccc",
+            backgroundColor: "rgba(255,255,255,0.8)",
+            borderRadius: "8px",
+            padding: "1rem",
+            margin: "1rem 0",
+            width: "100%",
+            
           }}
         >
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundImage: bgUrl ? `url(${bgUrl})` : "none",
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-            }}
-          />
+          <h3>تنظیمات افکت‌ها:</h3>
+          {/* هر بخش ورودی */}
+          <div>
+            <label>
+              Black & White Level:
+              <input
+                type="number"
+                name="blackWhiteLevel"
+                value={effects.blackWhiteLevel}
+                onChange={handleEffectChange}
+                step="0.1"
+                min="0"
+                max="1"
+              />
+            </label>
+            <span style={{ marginLeft: "10px" }}>0 تا 1</span>
+          </div>
 
-          <div
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: "50%",
-              transform: "translateX(-50%)",
-            }}
-          >
+          <div>
+            <label>
+              Posterize Bits:
+              <input
+                type="number"
+                name="posterizeBits"
+                value={effects.posterizeBits}
+                onChange={handleEffectChange}
+                step="1"
+                min="1"
+                max="8"
+              />
+            </label>
+            <span style={{ marginLeft: "10px" }}>1 تا 8</span>
+          </div>
+
+          <div>
+            <label>
+              Contrast Factor:
+              <input
+                type="number"
+                name="contrastFactor"
+                value={effects.contrastFactor}
+                onChange={handleEffectChange}
+                step="0.1"
+                min="0.1"
+                max="3"
+              />
+            </label>
+            <span style={{ marginLeft: "10px" }}>0.1 تا 3</span>
+          </div>
+
+          <div>
+            <label>
+              Overlay Alpha:
+              <input
+                type="number"
+                name="overlayAlpha"
+                value={effects.overlayAlpha}
+                onChange={handleEffectChange}
+                step="0.1"
+                min="0"
+                max="1"
+              />
+            </label>
+            <span style={{ marginLeft: "10px" }}>0 تا 1</span>
+          </div>
+
+
+
+          <div>
+            <label>
+              Brightness:
+              <input
+                type="number"
+                name="brightness"
+                value={effects.brightness}
+                onChange={handleEffectChange}
+                step="0.1"
+                min="-1"
+                max="1"
+              />
+            </label>
+            <span style={{ marginLeft: "10px" }}>-1 تا 1</span>
+          </div>
+
+          <div>
+            <label>
+              Saturation:
+              <input
+                type="number"
+                name="saturation"
+                value={effects.saturation}
+                onChange={handleEffectChange}
+                step="0.1"
+                min="-1"
+                max="1"
+              />
+            </label>
+            <span style={{ marginLeft: "10px" }}>-1 تا 1</span>
+          </div>
+
+          <div>
+            <label>
+              Sharpness:
+              <input
+                type="number"
+                name="sharpness"
+                value={effects.sharpness}
+                onChange={handleEffectChange}
+                step="0.1"
+                min="-1"
+                max="1"
+              />
+            </label>
+            <span style={{ marginLeft: "10px" }}>-1 تا 1</span>
+          </div>
+
+          <div>
+            <label>
+              Hue:
+              <input
+                type="number"
+                name="hue"
+                value={effects.hue}
+                onChange={handleEffectChange}
+                step="1"
+                min="-180"
+                max="180"
+              />
+            </label>
+            <span style={{ marginLeft: "10px" }}>-180 تا 180</span>
+          </div>
+
+          <div>
+            <label>
+              Blur:
+              <input
+                type="number"
+                name="blur"
+                value={effects.blur}
+                onChange={handleEffectChange}
+                step="1"
+                min="0"
+                max="100"
+              />
+            </label>
+            <span style={{ marginLeft: "10px" }}>0 تا 100</span>
+          </div>
+
+          <div>
+            <label>
+              Vignette:
+              <input
+                type="number"
+                name="vignette"
+                value={effects.vignette}
+                onChange={handleEffectChange}
+                step="0.1"
+                min="0"
+                max="1"
+              />
+            </label>
+            <span style={{ marginLeft: "10px" }}>0 تا 1</span>
+          </div>
+
+        </div>
+
+        {/* پیش‌نمایش اولیه (ورودی) */}
+        {previewSrc && (
+          <div style={{ margin: "1rem 0" }}>
+            <p style={{ color: "#fff", textAlign: "center" }}>پیش‌نمایش (ورودی):</p>
             <img
-              src={subjectSrc}
-              alt="Subject"
+              src={previewSrc}
+              alt="Preview"
               style={{
-                maxWidth: boxWidth + "px",
-                maxHeight: boxHeight + "px",
+                maxWidth: "90vw",
+                height: "auto",
+                border: "2px solid #ccc",
+                display: "block",
+                margin: "0 auto",
               }}
             />
           </div>
-        </div>
-      )}
+        )}
+
+        <button
+          onClick={handleRemoveBG}
+          disabled={loading}
+          style={{
+            margin: "0.5rem",
+            padding: "0.5rem 1rem",
+            fontSize: "1rem",
+            cursor: loading ? "not-allowed" : "pointer",
+          }}
+        >
+          {loading ? "در حال پردازش..." : "حذف بک‌گراند"}
+        </button>
+
+        {/* اگر تصویر خروجی وجود داشته باشد، دکمهٔ دانلود نشان داده شود */}
+        {subjectSrc && (
+          <button
+            onClick={handleDownload}
+            style={{
+              margin: "0.5rem",
+              padding: "0.5rem 1rem",
+              fontSize: "1rem",
+              cursor: "pointer",
+            }}
+          >
+            دانلود عکس
+          </button>
+        )}
+
+        {/* خروجی نهایی با پس‌زمینه‌ی رندوم */}
+        {subjectSrc && boxWidth && boxHeight && (
+          <div
+            style={{
+              margin: "2rem auto",
+              position: "relative",
+              border: "2px solid #ccc",
+              // برای محدودیت ریسپانسیو، می‌توانیم به جای width/height ثابت از maxWidth/maxHeight استفاده کنیم:
+              width: "auto",
+              height: "auto",
+              maxWidth: "90vw",
+            }}
+          >
+            {/* لایه بک‌گراند */}
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundImage: bgUrl ? `url(${bgUrl})` : "none",
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                backgroundRepeat: "no-repeat",
+              }}
+            />
+
+            {/* لایه سوژه */}
+            <div
+              style={{
+                position: "relative",
+              }}
+            >
+              <img
+                src={subjectSrc}
+                alt="Subject"
+                style={{
+                  maxWidth: "100%",
+                  height: "auto",
+                  display: "block",
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
