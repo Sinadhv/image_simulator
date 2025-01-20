@@ -1,2 +1,4 @@
-[build]
-builder = "Docker"
+[service]
+name = "my-service"  
+path = "."           
+dockerfile = "./Dockerfile"
