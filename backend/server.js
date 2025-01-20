@@ -1,4 +1,3 @@
-// server.js
 import express from "express";
 import fileUpload from "express-fileupload";
 import cors from "cors";
@@ -11,8 +10,9 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// مسیر کامل به فایل اجرایی rembg در محیط مجازی (در صورت نیاز)
-const REMBG_PATH = path.join(__dirname, "venv", "bin", "rembg");
+// می‌توانید اگر از rembg با path مشخص استفاده می‌کنید اینجا تعریف کنید، مثلاً:
+// const REMBG_PATH = path.join(__dirname, "venv", "bin", "rembg");
+// یا اگر در Docker نصب global شده، به‌صورت ساده rembg قابل دسترس است.
 
 // مسیر فایل‌های موقت
 const inputPath = path.join(__dirname, "input.png");
@@ -23,11 +23,13 @@ const outputPath = path.join(__dirname, "output.png");
 const PROCESS_IMAGE_PATH = path.join(__dirname, "process_image.py");
 
 const app = express();
+// پورت از متغیر محیطی یا 4000
 const PORT = process.env.PORT || 4000;
 
 app.use(fileUpload());
 app.use(cors());
 
+// روت API برای حذف بک‌گراند
 app.post("/api/remove-bg", async (req, res) => {
   try {
     if (!req.files || !req.files.file) {
@@ -35,19 +37,19 @@ app.post("/api/remove-bg", async (req, res) => {
     }
     const uploadedFile = req.files.file;
 
-    // نوشتن فایل آپلود شده به صورت موقت
+    // ذخیره موقت فایل ورودی
     fs.writeFileSync(inputPath, uploadedFile.data);
 
-    // اجرای دستور rembg برای حذف پس‌زمینه
-    // --model u2net_human_seg + alpha matting
+    // اجرای دستور rembg یا هر چیزی که می‌خواهید
+    // در اینجا به عنوان نمونه:
     execFile(
-      REMBG_PATH,
+      "rembg", // یا اگر در Docker روش دیگری نصب کرده‌اید، مسیرش را ست کنید
       [
         "i",
         "--model", "u2net_human_seg",
         "--alpha-matting",
-"--alpha-matting-foreground-threshold", "240",
-"--alpha-matting-background-threshold", "80",
+        "--alpha-matting-foreground-threshold", "240",
+        "--alpha-matting-background-threshold", "80",
         "--alpha-matting-erode-size", "20",
         inputPath,
         noBgPath
@@ -59,30 +61,30 @@ app.post("/api/remove-bg", async (req, res) => {
           return res.status(500).json({ error: "Failed to remove background" });
         }
 
-        // دریافت پارامترهای افکت‌ها از درخواست
+        // پارامترهای افکت‌ها از body
         const {
-          blackWhiteLevel = 0.2, // پیش‌فرض 0.2
-          posterizeBits = 4,      // پیش‌فرض 4
-          contrastFactor = 1.0,   // پیش‌فرض 1.0
-          overlayAlpha = 0.5,     // پیش‌فرض 0.5
-          blackLevel = 0.2,       // پیش‌فرض 0.2
-          whiteLevel = 0.8,       // پیش‌فرض 0.8
-          faceEnhance = false,    // پیش‌فرض غیرفعال
-          brightness = 0.0,       // پیش‌فرض 0.0
-          saturation = 0.0,       // پیش‌فرض 0.0
-          sharpness = 0.0,        // پیش‌فرض 0.0
-          hue = 0.0,              // پیش‌فرض 0.0
-          blur = 0.0,             // پیش‌فرض 0.0
-          vignette = 0.0,         // پیش‌فرض 0.0
-          skinSmooth = 0.0,       // پیش‌فرض 0.0
-          eyeBrighten = 0.0,      // پیش‌فرض 0.0
-          teethWhiten = 0.0,      // پیش‌فرض 0.0
-          lipstick = 0.0,         // پیش‌فرض 0.0
-          eyelashEnhance = 0.0,   // پیش‌فرض 0.0
-          addGlasses = false,     // پیش‌فرض غیرفعال
+          blackWhiteLevel = 0.2,
+          posterizeBits = 4,
+          contrastFactor = 1.0,
+          overlayAlpha = 0.5,
+          blackLevel = 0.2,
+          whiteLevel = 0.8,
+          faceEnhance = false,
+          brightness = 0.0,
+          saturation = 0.0,
+          sharpness = 0.0,
+          hue = 0.0,
+          blur = 0.0,
+          vignette = 0.0,
+          skinSmooth = 0.0,
+          eyeBrighten = 0.0,
+          teethWhiten = 0.0,
+          lipstick = 0.0,
+          eyelashEnhance = 0.0,
+          addGlasses = false,
         } = req.body;
 
-        // اعتبارسنجی پارامترها (بدون cartoonFactor)
+        // تبدیل مقادیر به عدد/بولین
         const blackWhiteLevelNum = parseFloat(blackWhiteLevel);
         const posterizeBitsNum = parseInt(posterizeBits, 10);
         const contrastFactorNum = parseFloat(contrastFactor);
@@ -103,77 +105,34 @@ app.post("/api/remove-bg", async (req, res) => {
         const eyelashEnhanceNum = parseFloat(eyelashEnhance);
         const addGlassesBool = addGlasses === 'true' || addGlasses === true;
 
-        const validations = [
-          { value: blackWhiteLevelNum, min: 0, max: 1, name: "blackWhiteLevel" },
-          { value: posterizeBitsNum, min: 1, max: 8, name: "posterizeBits" },
-          { value: contrastFactorNum, min: 0.1, max: 3, name: "contrastFactor" },
-          { value: overlayAlphaNum, min: 0, max: 1, name: "overlayAlpha" },
-          { value: blackLevelNum, min: 0, max: 1, name: "blackLevel" },
-          { value: whiteLevelNum, min: 0, max: 1, name: "whiteLevel" },
-          { value: brightnessNum, min: -1, max: 1, name: "brightness" },
-          { value: saturationNum, min: -1, max: 1, name: "saturation" },
-          { value: sharpnessNum, min: -1, max: 1, name: "sharpness" },
-          { value: hueNum, min: -180, max: 180, name: "hue" },
-          { value: blurNum, min: 0, max: 100, name: "blur" },
-          { value: vignetteNum, min: 0, max: 1, name: "vignette" },
-          { value: skinSmoothNum, min: 0, max: 1, name: "skinSmooth" },
-          { value: eyeBrightenNum, min: 0, max: 1, name: "eyeBrighten" },
-          { value: teethWhitenNum, min: 0, max: 1, name: "teethWhiten" },
-          { value: lipstickNum, min: 0, max: 1, name: "lipstick" },
-          { value: eyelashEnhanceNum, min: 0, max: 1, name: "eyelashEnhance" },
-        ];
+        // اگر خواستید ولیدیشن کنید، می‌توانید اینجا انجام دهید (محدوده اعداد و ...)
 
-        for (let param of validations) {
-          if (isNaN(param.value) || param.value < param.min || param.value > param.max) {
-            return res.status(400).json({ error: `Invalid ${param.name} parameter` });
-          }
-        }
-
-        // اجرای اسکریپت پایتون با پارامترهای افکت‌ها (بدون cartoonFactor)
+        // حالا اجرای اسکریپت پایتون برای افکت‌ها:
         execFile(
           "python3",
           [
             PROCESS_IMAGE_PATH,
             noBgPath,
             outputPath,
-            "--blackWhiteLevel",
-            blackWhiteLevelNum,
-            "--posterizeBits",
-            posterizeBitsNum,
-            "--contrastFactor",
-            contrastFactorNum,
-            "--overlayAlpha",
-            overlayAlphaNum,
-            "--blackLevel",
-            blackLevelNum,
-            "--whiteLevel",
-            whiteLevelNum,
-            "--faceEnhance",
-            faceEnhanceBool,
-            "--brightness",
-            brightnessNum,
-            "--saturation",
-            saturationNum,
-            "--sharpness",
-            sharpnessNum,
-            "--hue",
-            hueNum,
-            "--blur",
-            blurNum,
-            "--vignette",
-            vignetteNum,
-            "--skinSmooth",
-            skinSmoothNum,
-            "--eyeBrighten",
-            eyeBrightenNum,
-            "--teethWhiten",
-            teethWhitenNum,
-            "--lipstick",
-            lipstickNum,
-            "--eyelashEnhance",
-            eyelashEnhanceNum,
-            "--addGlasses",
-            addGlassesBool,
+            "--blackWhiteLevel", blackWhiteLevelNum,
+            "--posterizeBits", posterizeBitsNum,
+            "--contrastFactor", contrastFactorNum,
+            "--overlayAlpha", overlayAlphaNum,
+            "--blackLevel", blackLevelNum,
+            "--whiteLevel", whiteLevelNum,
+            "--faceEnhance", faceEnhanceBool,
+            "--brightness", brightnessNum,
+            "--saturation", saturationNum,
+            "--sharpness", sharpnessNum,
+            "--hue", hueNum,
+            "--blur", blurNum,
+            "--vignette", vignetteNum,
+            "--skinSmooth", skinSmoothNum,
+            "--eyeBrighten", eyeBrightenNum,
+            "--teethWhiten", teethWhitenNum,
+            "--lipstick", lipstickNum,
+            "--eyelashEnhance", eyelashEnhanceNum,
+            "--addGlasses", addGlassesBool
           ],
           (pyErr, pyStdout, pyStderr) => {
             console.log("Python stdout:", pyStdout);
@@ -210,6 +169,18 @@ app.post("/api/remove-bg", async (req, res) => {
   }
 });
 
+// -------------------------------------------------------------------
+// سرو کردن فایل‌های بیلدشده React از فولدر "public":
+const publicPath = path.join(__dirname, "public");
+app.use(express.static(publicPath));
+
+// هر مسیری که در بالا نبود، بفرست سمت index.html برای پشتیبانی از روت‌های SPA
+app.get("*", (req, res) => {
+  res.sendFile(path.join(publicPath, "index.html"));
+});
+
+// -------------------------------------------------------------------
+// لیسن کردن سرور:
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

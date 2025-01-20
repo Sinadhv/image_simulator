@@ -1,0 +1,18 @@
+# برای بک‌اند پایتون
+backend/venv/
+backend/__pycache__/
+*.pyc
+
+# برای بک‌اند Node.js
+backend/node_modules/
+
+# برای فرانت‌اند
+frontend/node_modules/
+
+# فایل‌های env
+.env
+.env.*
+
+# هر فایل یا پوشه‌ی موقتی دیگر
+dist/
+build/

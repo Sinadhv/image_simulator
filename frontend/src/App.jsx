@@ -1,10 +1,8 @@
-// App.jsx
 import { useState } from "react";
 
 function App() {
   const backgrounds = [
     "/back.JPG",
-    
   ];
 
   const [selectedFile, setSelectedFile] = useState(null);
@@ -15,27 +13,27 @@ function App() {
   const [boxHeight, setBoxHeight] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // وضعیت پارامترهای افکت‌ها بدون Cartoon Factor
+  // وضعیت پارامترهای افکت‌ها (بدون Cartoon Factor)
   const [effects, setEffects] = useState({
-    blackWhiteLevel: 0.2, // درجه سیاه و سفید
-    posterizeBits: 4,      // تعداد بیت‌های پسترایز
-    contrastFactor: 1.0,   // فاکتور کنتراست
-    overlayAlpha: 0.5,     // شفافیت overlay
-    blackLevel: 0.2,       // سطح سیاهی
-    whiteLevel: 0.8,       // سطح سفیدی
-    faceEnhance: false,    // فعال/غیرفعال کردن افکت Face Enhance
-    brightness: 0.0,       // تنظیم روشنایی
-    saturation: 0.0,       // تنظیم اشباع رنگ
-    sharpness: 0.0,        // تنظیم وضوح
-    hue: 0.0,              // تنظیم Hue
-    blur: 0.0,             // تنظیم Blur
-    vignette: 0.0,         // تنظیم Vignette
-    skinSmooth: 0.0,       // تنظیم Skin Smooth
-    eyeBrighten: 0.0,      // تنظیم روشن‌سازی چشم‌ها
-    teethWhiten: 0.0,      // تنظیم سفید کردن دندان‌ها
-    lipstick: 0.0,         // تنظیم رنگ لب‌ها
-    eyelashEnhance: 0.0,   // تنظیم افزایش حجم مژه‌ها
-    addGlasses: false,     // فعال/غیرفعال کردن افزودن عینک
+    blackWhiteLevel: 0.2,
+    posterizeBits: 4,
+    contrastFactor: 1.0,
+    overlayAlpha: 0.5,
+    blackLevel: 0.2,
+    whiteLevel: 0.8,
+    faceEnhance: false,
+    brightness: 0.0,
+    saturation: 0.0,
+    sharpness: 0.0,
+    hue: 0.0,
+    blur: 0.0,
+    vignette: 0.0,
+    skinSmooth: 0.0,
+    eyeBrighten: 0.0,
+    teethWhiten: 0.0,
+    lipstick: 0.0,
+    eyelashEnhance: 0.0,
+    addGlasses: false,
   });
 
   const handleFileChange = (e) => {
@@ -83,15 +81,17 @@ function App() {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      // افزودن پارامترهای افکت‌ها به فرم دیتا
+      // افزودن پارامترهای افکت‌ها
       Object.keys(effects).forEach((key) => {
         formData.append(key, effects[key]);
       });
 
+      // اگر در Docker نهایی پورت 4000 باشد، همین لینک جواب می‌دهد:
       const response = await fetch("http://localhost:4000/api/remove-bg", {
         method: "POST",
         body: formData,
       });
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || "خطایی در پردازش حذف بک‌گراند رخ داد.");
@@ -476,12 +476,6 @@ function App() {
         {loading ? "در حال پردازش..." : "حذف بک‌گراند"}
       </button>
 
-      {/* 
-        باکس اصلی را فقط زمانی نشان بدهیم که
-        1) ابعاد محاسبه شده (boxWidth, boxHeight)
-        2) و subjectSrc از سرور رسیده
-        در غیر این صورت، نمایش ندهیم.
-      */}
       {subjectSrc && boxWidth && boxHeight && (
         <div
           style={{
@@ -492,7 +486,6 @@ function App() {
             border: "1px solid #ccc",
           }}
         >
-          {/* div بک‌گراند رندوم (cover) */}
           <div
             style={{
               position: "absolute",
@@ -507,7 +500,6 @@ function App() {
             }}
           />
 
-          {/* سوژه در پایین-وسط */}
           <div
             style={{
               position: "absolute",
@@ -529,7 +521,6 @@ function App() {
       )}
     </div>
   );
-
 }
 
 export default App;
