@@ -5,48 +5,54 @@ import fs from "fs";
 import { execFile } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
+import { v4 as uuidv4 } from 'uuid'; // Import uuid برای تولید نام فایل‌های منحصر به فرد
 
 // تعریف __dirname در ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// می‌توانید اگر از rembg با path مشخص استفاده می‌کنید اینجا تعریف کنید، مثلاً:
-// const REMBG_PATH = path.join(__dirname, "venv", "bin", "rembg");
-// یا اگر در Docker نصب global شده، به‌صورت ساده rembg قابل دسترس است.
-
-// مسیر فایل‌های موقت
-const inputPath = path.join(__dirname, "input.png");
-const noBgPath = path.join(__dirname, "no_bg.png");
-const outputPath = path.join(__dirname, "output.png");
-
 // مسیر اسکریپت پایتون
 const PROCESS_IMAGE_PATH = path.join(__dirname, "process_image.py");
-
+const REMBG_MODEL_NAME = "u2net_human_seg";
 const app = express();
-// پورت از متغیر محیطی یا 4000
-const PORT = process.env.PORT || 4000;
+// پورت از متغیر محیطی یا 8080
+const PORT = process.env.PORT || 8080;
 
 app.use(fileUpload());
-app.use(cors());
+app.use(cors({
+  origin: '*', // در صورت نیاز می‌توانید این مقدار را محدودتر کنید، مثلاً 'https://your-frontend-domain.com'
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type']
+}));
 
 // روت API برای حذف بک‌گراند
-app.post("/api/remove-bg", async (req, res) => {
+app.post("/api/remove-bg", (req, res) => {
+  console.log("Received request to /api/remove-bg");
+
   try {
     if (!req.files || !req.files.file) {
+      console.error("No file uploaded");
       return res.status(400).json({ error: "No file uploaded" });
     }
     const uploadedFile = req.files.file;
 
+    // تولید نام فایل‌های موقت منحصر به فرد
+    const uniqueId = uuidv4();
+    const inputPath = path.join(__dirname, `${uniqueId}_input.png`);
+    const noBgPath = path.join(__dirname, `${uniqueId}_noBg.png`);
+    const outputPath = path.join(__dirname, `${uniqueId}_output.png`);
+
+    console.log(`Saving uploaded file to ${inputPath}`);
     // ذخیره موقت فایل ورودی
     fs.writeFileSync(inputPath, uploadedFile.data);
 
-    // اجرای دستور rembg یا هر چیزی که می‌خواهید
-    // در اینجا به عنوان نمونه:
+    // اجرای دستور rembg
+    console.log("Executing rembg command");
     execFile(
-      "rembg", // یا اگر در Docker روش دیگری نصب کرده‌اید، مسیرش را ست کنید
+      "rembg",
       [
         "i",
-        "--model", "u2net_human_seg",
+        "--model", REMBG_MODEL_NAME,
         "--alpha-matting",
         "--alpha-matting-foreground-threshold", "240",
         "--alpha-matting-background-threshold", "80",
@@ -58,8 +64,12 @@ app.post("/api/remove-bg", async (req, res) => {
         if (err) {
           console.error("Error in rembg child_process:", err);
           console.error("stderr output:", stderr);
+          // پاک کردن فایل‌های موقت
+          fs.unlinkSync(inputPath);
           return res.status(500).json({ error: "Failed to remove background" });
         }
+
+        console.log("rembg command executed successfully");
 
         // پارامترهای افکت‌ها از body
         const {
@@ -105,9 +115,8 @@ app.post("/api/remove-bg", async (req, res) => {
         const eyelashEnhanceNum = parseFloat(eyelashEnhance);
         const addGlassesBool = addGlasses === 'true' || addGlasses === true;
 
-        // اگر خواستید ولیدیشن کنید، می‌توانید اینجا انجام دهید (محدوده اعداد و ...)
-
-        // حالا اجرای اسکریپت پایتون برای افکت‌ها:
+        console.log("Executing Python script for effects");
+        // اجرای اسکریپت پایتون برای افکت‌ها
         execFile(
           "python3",
           [
@@ -140,10 +149,14 @@ app.post("/api/remove-bg", async (req, res) => {
 
             if (pyErr) {
               console.error("Error in Python script:", pyErr);
+              // پاک کردن فایل‌های موقت
+              fs.unlinkSync(inputPath);
+              fs.unlinkSync(noBgPath);
               return res.status(500).json({ error: "Python script failed" });
             }
 
             try {
+              console.log(`Reading output file from ${outputPath}`);
               // خواندن فایل خروجی
               const outputBuffer = fs.readFileSync(outputPath);
               const base64 = `data:image/png;base64,${outputBuffer.toString("base64")}`;
@@ -154,9 +167,14 @@ app.post("/api/remove-bg", async (req, res) => {
               fs.unlinkSync(outputPath);
 
               // ارسال نتیجه به فرانت‌اند
+              console.log("Sending response to frontend");
               return res.json({ base64 });
             } catch (readErr) {
               console.error("Error reading output file:", readErr);
+              // پاک کردن فایل‌های موقت
+              fs.unlinkSync(inputPath);
+              fs.unlinkSync(noBgPath);
+              fs.unlinkSync(outputPath);
               return res.status(500).json({ error: "Failed to read output file" });
             }
           }
@@ -178,9 +196,9 @@ app.use(express.static(publicPath));
 app.get("*", (req, res) => {
   res.sendFile(path.join(publicPath, "index.html"));
 });
-
 // -------------------------------------------------------------------
+
 // لیسن کردن سرور:
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
 });

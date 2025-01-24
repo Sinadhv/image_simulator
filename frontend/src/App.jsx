@@ -143,10 +143,11 @@ async function mergeImages(bgUrl, subjectUrl, width, height) {
         formData.append(key, effects[key]);
       });
 
-      const response = await fetch("http://localhost:4000/api/remove-bg", {
+      const response = await fetch("/api/remove-bg", {
         method: "POST",
         body: formData,
       });
+      
 
       if (!response.ok) {
         const errorData = await response.json();
